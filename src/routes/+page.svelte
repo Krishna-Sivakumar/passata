@@ -14,9 +14,9 @@
     <div
         class="flex flex-col w-1/2 justify-around gap-4 md:gap-0 mt-16 md:flex-row"
     >
-        <a href="/{data.newId}" class="pomo-button">pomodoro timer</a>
-        <a href="/{data.newId}" class="pomo-button">custom timer</a>
-        <a href="/{data.newId}" class="pomo-button">kitchen timer</a>
+        <a href="/random" class="pomo-button">pomodoro timer</a>
+        <a href="/random" class="pomo-button">custom timer</a>
+        <a href="/random" class="pomo-button">kitchen timer</a>
     </div>
 </div>
 
