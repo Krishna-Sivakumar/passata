@@ -20,3 +20,10 @@ npm run build
 ```
 
 You can preview the production build with `npm run preview`.
+
+### TODO
+---
+1. Add a form to customize the timer
+2. Implement Server-Sent Events
+3. Add link sharability
+
