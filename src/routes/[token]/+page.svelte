@@ -12,6 +12,8 @@
     let currentSecondsLeft = $state(duration);
     let repeatForever = $state(false);
 
+    let actions = $state([]);
+
     async function sendEvent(event: any) {
         const response = await fetch("/events", {
             method: "POST",
@@ -79,9 +81,9 @@
         class="flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
         onclick={resetTimer}><ResetIcon class="text-white" />RESET</button
     >
-    <div class="flex gap-1 text-white">
+    <div class="flex gap-1 text-white items-center">
         <input type="checkbox" bind:checked={repeatForever} id="repeat" />
-        <label for="repeat">Repeat Forever</label>
+        <label for="repeat" class="select-none">Repeat Forever</label>
     </div>
 
     <audio src={chime} bind:this={audioElement}> </audio>
