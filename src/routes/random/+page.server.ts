@@ -1,12 +1,12 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({}) => {
+export const load: PageServerLoad = ({url}) => {
     let base64Key = Array(8)
         .fill(0)
         .map(() => {
             return Math.floor(Math.random() * 64).toString(36);
         })
         .join("");
-    redirect(307, `/${base64Key}`)
+    redirect(307, `/${base64Key}?` + url.searchParams)
 }

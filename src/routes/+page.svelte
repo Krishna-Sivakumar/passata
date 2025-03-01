@@ -4,8 +4,8 @@
     data.newId;
 </script>
 
-<div class="h-5/6 flex flex-col items-center justify-center sm:h-3/4">
-    <h1 class="text-red-500 font-bold text-7xl md:text-9xl">Passata</h1>
+<div class="flex flex-col items-center justify-center sm:h-3/4" style="height: 100vh;">
+    <h1 class="text-red-500 font-bold text-7xl md:text-9xl mt-auto">Passata</h1>
     <p
         class="text-white font-bold text-lg text-center mt-8 mx-4 md:m-0 md:text-4xl"
     >
@@ -14,20 +14,20 @@
     <div
         class="flex flex-col w-1/2 justify-around gap-4 md:gap-0 mt-16 md:flex-row"
     >
-        <a href="/random" class="pomo-button">pomodoro timer</a>
-        <a href="/random" class="pomo-button">custom timer</a>
-        <a href="/random" class="pomo-button">kitchen timer</a>
+        <a href="/random?mode=pomodoro" class="pomo-button">pomodoro timer</a>
+        <a href="/random?mode=custom" class="pomo-button">custom timer</a>
+        <a href="/random?mode=normal" class="pomo-button">kitchen timer</a>
     </div>
-</div>
 
-<div class="flex justify-center text-white mt-auto mb-8">
-    <p>
-        2025, <a
-            href="https://krishna-sivakumar.github.io"
-            target="_blank"
-            class="underline">Krishna Sivakumar</a
-        >
-    </p>
+    <div class="flex justify-center text-white mb-8 mt-auto">
+        <p>
+            2025, <a
+                href="https://krishna-sivakumar.github.io"
+                target="_blank"
+                class="underline">Krishna Sivakumar</a
+            >
+        </p>
+    </div>
 </div>
 
 <style lang="scss">
