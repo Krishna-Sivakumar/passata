@@ -1,4 +1,4 @@
-import { TimerState, type LogEvent } from "$lib/structs";
+import { TimerState, type LogEvent } from "./structs";
 import { ReplayError, ReplayLog } from "./events";
 
 // Log Replay Tests
@@ -14,6 +14,18 @@ test('LogReplay.IsInitialized', () => {
     ]
 
     expect(() => ReplayLog(events, serverTimestamp)).toThrow(ReplayError)
+})
+
+test('LogReplay.ConfigNonEmpty', () => {
+    const serverTimestamp = 0; 
+    const events: LogEvent[] = [
+        {
+            config: [
+            ],
+            state: TimerState.Initial,
+            realTimestamp: 0
+        }
+    ]
 })
 
 test('LogReplay.Playing.TimeLeftIsUpdated1', () => {
@@ -216,3 +228,10 @@ test('LogReplay.Paused.TimeLeftIsNotUpdated2', () => {
     const timer = ReplayLog(events, serverTimestamp)
     expect(timer.currentSecondsLeft).toBe(4);
 })
+
+// TODO add tests for config changeover
+test('LogReplay.ChangeOver1', () => {
+})
+
+// TODO add tests for log compaction / skipping
+test('LogReplay.SkipLogs')
