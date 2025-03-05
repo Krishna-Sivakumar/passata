@@ -37,6 +37,7 @@ export type TimestampedLogs = {
 */
 export type Timer = {
     config: TimerConfig[],
+    configIndex: number,
     state: TimerState,
     duration: number,
     repeatForever: boolean,
