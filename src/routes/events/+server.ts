@@ -50,6 +50,7 @@ export const POST: RequestHandler = async ({ url }) => {
 
 // we're using the PUT method since the POST method is reserved for Server-Sent-Event responses
 export const PUT: RequestHandler = async ({ request, url }) => {
+    // TODO replace token with connectionToken and remove references invovling just token
     let event: LogEvent = await request.json();
     event.realTimestamp = Date.now(); // every timestamp is pegged to the server's time
     let token = url.searchParams.get("token")
