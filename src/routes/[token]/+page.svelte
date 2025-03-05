@@ -12,10 +12,18 @@
         type Timer,
         type TimestampedLogs,
     } from "$lib/structs";
+    import { PerformEvent } from "$lib/events";
     import { source } from "sveltekit-sse";
     import { onMount } from "svelte";
 
     let timerState: Timer = $state({
+        config: [
+            {
+                duration: 5,
+                name: "",
+            },
+        ],
+        configIndex: 0,
         state: TimerState.Initial,
         duration: 5,
         currentSecondsLeft: 5,
@@ -39,7 +47,12 @@
             const response = await fetch("/events", { method: "GET" });
             const timeAtResponse = Date.now();
             const totalTime = performance.now() - start;
-            console.log("performance counter:", performance.now(), start, performance.now() - start)
+            console.log(
+                "performance counter:",
+                performance.now(),
+                start,
+                performance.now() - start,
+            );
             correction = totalTime / 2;
             // gap is the server time stamp + ntp correction + how long we waited for the correction to be computed
             gap = parseInt(await response.text()) + correction - timeAtResponse; // sometimes overshoots the current time when time to receive request > response time at server locally
@@ -52,9 +65,9 @@
 
         setInterval(correct, 5000);
 
-        const messages = source(`/events?token=${data.token}`).select("update");
+        const messages = source(`/events?token=${data.token}&connectionToken=${data.connectionToken}`).select("update");
         messages.subscribe((newValues) => {
-            const timeAtResponse = Date.now()
+            const timeAtResponse = Date.now();
             // adding items to the log
             if (newValues.length == 0) {
                 return;
@@ -71,7 +84,7 @@
     async function sendEvent(event: LogEvent) {
         // TODO protect against XSS attacks on our site. Or DDOSing the API.
         // timerState.log = [...timerState.log, {realTimestamp: Date.now(), state: event.type}]
-        const response = await fetch(`/events?token=${data.token}`, {
+        const response = await fetch(`/events?token=${data.token}&connectionToken=${data.connectionToken}`, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json",
@@ -82,7 +95,14 @@
 
     //TODO separate controlling the state from sending an event.
     function pause() {
-        timerState.state = TimerState.Paused;
+        timerState = PerformEvent(
+            {
+                state: TimerState.Paused,
+                currenSecondsLeft: timerState.currentSecondsLeft,
+                realTimestamp: Date.now(),
+            },
+            timerState,
+        );
         if (intervalId != -1) {
             clearInterval(intervalId);
         }
@@ -90,7 +110,14 @@
     }
 
     function play() {
-        timerState.state = TimerState.Playing;
+        timerState = PerformEvent(
+            {
+                state: TimerState.Playing,
+                currenSecondsLeft: timerState.currentSecondsLeft,
+                realTimestamp: Date.now(),
+            },
+            timerState,
+        );
         let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
         intervalId = window.setInterval(() => {
             timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
@@ -99,7 +126,7 @@
                     audioElement.play();
                 }
                 timerState.currentSecondsLeft = 0;
-                // TODO stopping the timer is coupled with sending an event. deal with this.
+                // TODO restarting the timer is coupled with sending an event. deal with this.
                 if (intervalId != -1) {
                 }
             }
@@ -187,14 +214,14 @@
         onclick={startInterval}
     >
         {#if timerState.state == TimerState.Paused || timerState.state == TimerState.Initial}
-            <PlayIcon class="text-white" /> START
+            <PlayIcon/> START
         {:else}
-            <PauseIcon class="text-white" /> PAUSE
+            <PauseIcon/> PAUSE
         {/if}
     </button>
     <button
         class="flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
-        onclick={resetTimer}><ResetIcon class="text-white" />RESET</button
+        onclick={resetTimer}><ResetIcon/>RESET</button
     >
     <div
         class="flex gap-1 text-white items-center border border-red-500 px-2 py-2 rounded"

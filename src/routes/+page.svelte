@@ -14,9 +14,19 @@
     <div
         class="flex flex-col w-1/2 justify-around gap-4 md:gap-0 mt-16 md:flex-row"
     >
-        <a href="/random?mode=pomodoro" class="pomo-button">pomodoro timer</a>
-        <a href="/random?mode=custom" class="pomo-button">custom timer</a>
-        <a href="/random?mode=normal" class="pomo-button">kitchen timer</a>
+        <!-- TODO sections must be smaller on mobile. All of the properties rn must be namespaced under sm: -->
+        <div class="flex flex-col sm:w-1/3 sm:px-4 sm:text-center sm:gap-2 sm:border-r border-trans">
+            <a href="/random?mode=pomodoro" class="pomo-button">pomodoro timer</a>
+            <p class="text-white hidden sm:block">Use the standard pomodoro timer. <br/> 25 minutes of work, 15 minutes of rest. 4 times over.</p>
+        </div>
+        <div class="flex flex-col sm:w-1/3 sm:px-4 sm:text-center sm:gap-2 sm:border-r border-trans">
+            <a href="/random?mode=custom" class="pomo-button">custom timer</a>
+            <p class="text-white hidden sm:block">Come up with a custom timer for your own needs.</p>
+        </div>
+        <div class="flex flex-col sm:w-1/3 sm:px-4 sm:text-center sm:gap-2 sm:border-trans">
+            <a href="/random?mode=normal" class="pomo-button">kitchen timer</a>
+            <p class="text-white hidden sm:block">A normal countdown timer with a set duration.</p>
+        </div>
     </div>
 
     <div class="flex justify-center text-white mb-8 mt-auto">
@@ -45,5 +55,9 @@
             color: white;
             background-color: var(--color-red-500);
         }
+    }
+
+    .border-trans {
+        border-color: rgba(255, 255, 255, 0.3);
     }
 </style>
