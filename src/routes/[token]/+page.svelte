@@ -12,28 +12,34 @@
         type Timer,
         type TimestampedLogs,
     } from "$lib/structs";
-    import { PerformEvent } from "$lib/events";
+    import { PerformEvent, ReplayLog } from "$lib/events";
     import { source } from "sveltekit-sse";
     import { onMount } from "svelte";
 
     let timerState: Timer = $state({
         config: [
             {
-                duration: 5,
+                duration: 20,
                 name: "",
             },
         ],
         configIndex: 0,
         state: TimerState.Initial,
-        duration: 5,
-        currentSecondsLeft: 5,
+        duration: 20,
+        currentSecondsLeft: 20,
         repeatForever: false,
         log: [],
     });
 
     if (data.mode == "normal") {
-        timerState.duration = 120;
-        timerState.currentSecondsLeft = 120;
+        timerState = PerformEvent({
+            config: [{
+                name: "Period 1",
+                duration: 120
+            }],
+            realTimestamp: Date.now(),
+            state: TimerState.Initial
+        }, timerState)
     }
 
     let intervalId: number = $state(-1);
@@ -63,10 +69,13 @@
             correct();
         }
 
-        setInterval(correct, 5000);
+        // setInterval(correct, 5000);
+
+        // TODO performing an event from the log should trigger play, pause and reset events.
 
         const messages = source(`/events?token=${data.token}&connectionToken=${data.connectionToken}`).select("update");
         messages.subscribe((newValues) => {
+            console.log(newValues)
             const timeAtResponse = Date.now();
             // adding items to the log
             if (newValues.length == 0) {
@@ -75,11 +84,43 @@
             let response = JSON.parse(newValues) as TimestampedLogs;
 
             let logArray = response.logs;
-            timerState.log = [...logArray, ...timerState.log];
+            console.log(logArray)
 
             // replay events in log
+            if (timerState.log.length == 1) {
+                timerState = ReplayLog(logArray, Date.now() + gap);
+            } else {
+                for (let i = logArray.length - 1; i >= 0; i --) {
+                    timerState = PerformEvent(logArray[i], timerState)
+                }
+            }
         });
     });
+
+    $effect(() => {
+        if (timerState.state == TimerState.Playing) {
+            let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
+            intervalId = window.setInterval(() => {
+                timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
+                if (timerState.currentSecondsLeft <= 0) {
+                    if (audioElement != undefined) {
+                        // audioElement.play();
+                    }
+                    timerState.currentSecondsLeft = 0;
+                    // TODO restarting the timer is coupled with sending an event. deal with this.
+                    if (intervalId != -1) {
+                    }
+                }
+            });
+        }
+
+        if (timerState.state == TimerState.Paused) {
+            if (intervalId != -1) {
+                clearInterval(intervalId);
+            }
+            intervalId = -1;
+        }
+    })
 
     async function sendEvent(event: LogEvent) {
         // TODO protect against XSS attacks on our site. Or DDOSing the API.
@@ -103,10 +144,12 @@
             },
             timerState,
         );
+        /*
         if (intervalId != -1) {
             clearInterval(intervalId);
         }
         intervalId = -1;
+        */
     }
 
     function play() {
@@ -118,19 +161,16 @@
             },
             timerState,
         );
-        let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
-        intervalId = window.setInterval(() => {
-            timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
-            if (timerState.currentSecondsLeft <= 0) {
-                if (audioElement != undefined) {
-                    audioElement.play();
-                }
-                timerState.currentSecondsLeft = 0;
-                // TODO restarting the timer is coupled with sending an event. deal with this.
-                if (intervalId != -1) {
-                }
-            }
-        });
+    }
+
+    function playButtonClick() {
+        if (timerState.state == TimerState.Playing) {
+            pause();
+            sendEvent(timerState.log[0])
+        } else {
+            play();
+            sendEvent(timerState.log[0])
+        }
     }
 
     function startInterval() {
@@ -178,8 +218,14 @@
     }
 
     function applyReset() {
-        timerState.currentSecondsLeft = timerState.duration;
-        timerState.state = TimerState.Initial;
+        timerState = PerformEvent({
+            state: TimerState.Initial,
+            realTimestamp: Date.now() + gap,
+            config: timerState.config
+        }, timerState)
+
+        // timerState.currentSecondsLeft = timerState.duration;
+        // timerState.state = TimerState.Initial;
         if (intervalId != -1) {
             clearInterval(intervalId);
             intervalId = -1;
@@ -188,11 +234,7 @@
 
     function resetTimer() {
         applyReset();
-        sendEvent({
-            state: timerState.state,
-            currenSecondsLeft: timerState.currentSecondsLeft,
-            realTimestamp: Date.now(),
-        });
+        sendEvent(timerState.log[0])
     }
 </script>
 
@@ -211,7 +253,7 @@
     </p>
     <button
         class="flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
-        onclick={startInterval}
+        onclick={playButtonClick}
     >
         {#if timerState.state == TimerState.Paused || timerState.state == TimerState.Initial}
             <PlayIcon/> START
