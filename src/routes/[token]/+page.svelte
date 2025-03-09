@@ -12,7 +12,7 @@
         type Timer,
         type TimestampedLogs,
     } from "$lib/structs";
-    import { PerformEvent, ReplayLog } from "$lib/events";
+    import { PerformEvent } from "$lib/events";
     import { source } from "sveltekit-sse";
     import { onMount } from "svelte";
 
@@ -30,6 +30,11 @@
         repeatForever: false,
         log: [],
     });
+
+    // TODO if the timer is uninitialized while provided a query parameter (no logs):
+    // 1. TODO initialize it with a form if it's a custom timer or a kitchen timer
+    // 2. TODO intiailize it with a preset if it's a pomodoro timer
+    // TODO if the timer is initialized, ignore the query parameter
 
     if (data.mode == "normal") {
         timerState = PerformEvent({
@@ -53,16 +58,10 @@
             const response = await fetch("/events", { method: "GET" });
             const timeAtResponse = Date.now();
             const totalTime = performance.now() - start;
-            console.log(
-                "performance counter:",
-                performance.now(),
-                start,
-                performance.now() - start,
-            );
             correction = totalTime / 2;
             // gap is the server time stamp + ntp correction + how long we waited for the correction to be computed
             gap = parseInt(await response.text()) + correction - timeAtResponse; // sometimes overshoots the current time when time to receive request > response time at server locally
-            console.log("correction:", correction, "gap:", gap);
+            console.log("correction:", correction + "ms", "gap:", gap + "ms");
         }
 
         if (correction == -1) {
@@ -71,11 +70,8 @@
 
         // setInterval(correct, 5000);
 
-        // TODO performing an event from the log should trigger play, pause and reset events.
-
         const messages = source(`/events?token=${data.token}&connectionToken=${data.connectionToken}`).select("update");
         messages.subscribe((newValues) => {
-            console.log(newValues)
             const timeAtResponse = Date.now();
             // adding items to the log
             if (newValues.length == 0) {
@@ -84,43 +80,49 @@
             let response = JSON.parse(newValues) as TimestampedLogs;
 
             let logArray = response.logs;
-            console.log(logArray)
+            // console.log(`got ${logArray.length} event(s):`, logArray)
 
             // replay events in log
-            if (timerState.log.length == 1) {
-                timerState = ReplayLog(logArray, Date.now() + gap);
-            } else {
-                for (let i = logArray.length - 1; i >= 0; i --) {
-                    timerState = PerformEvent(logArray[i], timerState)
-                }
+            for (let i = logArray.length - 1; i >= 0; i --) {
+                timerState = PerformEvent(logArray[i], timerState)
             }
+            const finalLog = logArray[0]
+            if (finalLog.state == TimerState.Playing) {
+                // If the timer is still playing, check how many seconds have elapsed since the start.
+                // If the time elapsed is more than the duration of the timer, the timer is done.
+                // It's up to the browser to change over to the next config.
+                timerState.currentSecondsLeft = Math.max(finalLog.currenSecondsLeft - (Date.now() + gap - finalLog.realTimestamp)/1000, 0);
+            }
+            PerformBrowserEvent();
         });
     });
 
-    $effect(() => {
-        if (timerState.state == TimerState.Playing) {
+    function PerformBrowserEvent() {
+        // console.log(timerState.currentSecondsLeft)
+        if (timerState.state == TimerState.Playing || timerState.state == TimerState.NextPeriod) {
             let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
             intervalId = window.setInterval(() => {
                 timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
                 if (timerState.currentSecondsLeft <= 0) {
                     if (audioElement != undefined) {
-                        // audioElement.play();
+                        audioElement.play();
                     }
                     timerState.currentSecondsLeft = 0;
-                    // TODO restarting the timer is coupled with sending an event. deal with this.
-                    if (intervalId != -1) {
-                    }
+                    resetTimer(); // reset the timer when it ends
+                    // if the timer can be repeated forever, start it up
+                    // TODO use a move to next stage signal to reset the timer instead
+                    // if repeat forever is set, reset the timer THERE.
                 }
             });
         }
 
-        if (timerState.state == TimerState.Paused) {
+        if (timerState.state == TimerState.Paused || timerState.state == TimerState.Initial) {
             if (intervalId != -1) {
                 clearInterval(intervalId);
             }
             intervalId = -1;
         }
-    })
+    }
 
     async function sendEvent(event: LogEvent) {
         // TODO protect against XSS attacks on our site. Or DDOSing the API.
@@ -134,7 +136,16 @@
         });
     }
 
-    //TODO separate controlling the state from sending an event.
+    function nextPeriod() {
+        timerState = PerformEvent({
+            state: TimerState.NextPeriod,
+            currenSecondsLeft: timerState.currentSecondsLeft,
+            realTimestamp: Date.now(),
+        }, timerState)
+        sendEvent(timerState.log[0])
+        PerformBrowserEvent();
+    }
+
     function pause() {
         timerState = PerformEvent(
             {
@@ -144,12 +155,8 @@
             },
             timerState,
         );
-        /*
-        if (intervalId != -1) {
-            clearInterval(intervalId);
-        }
-        intervalId = -1;
-        */
+        sendEvent(timerState.log[0])
+        PerformBrowserEvent();
     }
 
     function play() {
@@ -161,80 +168,31 @@
             },
             timerState,
         );
+        sendEvent(timerState.log[0])
+        PerformBrowserEvent()
     }
 
     function playButtonClick() {
         if (timerState.state == TimerState.Playing) {
             pause();
-            sendEvent(timerState.log[0])
         } else {
             play();
-            sendEvent(timerState.log[0])
         }
     }
 
-    function startInterval() {
-        if (timerState.state == TimerState.Playing) {
-            timerState.state = TimerState.Paused;
-            clearInterval(intervalId);
-            intervalId = -1;
-            sendEvent({
-                state: timerState.state,
-                currenSecondsLeft: timerState.currentSecondsLeft,
-                realTimestamp: Date.now(),
-            });
-            return;
-        } else {
-            timerState.state = TimerState.Playing;
-            sendEvent({
-                state: timerState.state,
-                currenSecondsLeft: timerState.currentSecondsLeft,
-                realTimestamp: Date.now(),
-            });
-        }
-
-        // isPaused = !isPaused;
-        if (intervalId != -1) {
-            return;
-        }
-        let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
-        timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
-        intervalId = window.setInterval(() => {
-            timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
-            if (timerState.currentSecondsLeft <= 0) {
-                if (audioElement != undefined) {
-                    audioElement.play();
-                }
-                timerState.currentSecondsLeft = 0;
-                if (intervalId != -1) {
-                    resetTimer();
-
-                    if (timerState.repeatForever) {
-                        startInterval();
-                    }
-                }
-            }
-        }, 10);
-    }
-
-    function applyReset() {
+    function resetTimer() {
         timerState = PerformEvent({
             state: TimerState.Initial,
             realTimestamp: Date.now() + gap,
             config: timerState.config
         }, timerState)
 
-        // timerState.currentSecondsLeft = timerState.duration;
-        // timerState.state = TimerState.Initial;
         if (intervalId != -1) {
             clearInterval(intervalId);
             intervalId = -1;
         }
-    }
-
-    function resetTimer() {
-        applyReset();
         sendEvent(timerState.log[0])
+        PerformBrowserEvent();
     }
 </script>
 
