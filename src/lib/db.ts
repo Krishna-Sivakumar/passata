@@ -76,18 +76,13 @@ export async function fetchRows<T>(
 export async function findLogs(
     token: string,
     last_timestamp: number,
+    connectionToken: string,
 ): Promise<Array<{ log: string; timestamp: number }>> {
     const db = await database();
-    if (last_timestamp == -1) {
-        const statement = db.prepare(
-            "SELECT log, timestamp FROM log WHERE token = ? AND timestamp > ? ORDER BY timestamp DESC",
-        );
-        return await fetchRows(statement, [token, last_timestamp]);
-    }
     const statement = db.prepare(
         "SELECT log, timestamp FROM log WHERE token = ? AND timestamp > ? AND connection <> ? ORDER BY timestamp DESC",
     );
-    return await fetchRows(statement, [token, last_timestamp]);
+    return await fetchRows(statement, [token, last_timestamp, connectionToken]);
 }
 
 export async function insertLog(
