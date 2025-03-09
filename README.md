@@ -23,6 +23,5 @@ You can preview the production build with `npm run preview`.
 
 ### TODO
 ---
-1. Add a form to customize the timer
-2. Add link sharability
+1. Add link sharability
 

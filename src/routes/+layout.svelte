@@ -14,5 +14,11 @@
         background-size: 15px 15px;
         display: flex;
         flex-direction: column;
+        font-family: "Lexend Deca", sans-serif;
+    }
+
+    @font-face {
+        font-family: "Lexend Deca";
+        src: url("/LexendDeca-VariableFont_wght.ttf");
     }
 </style>

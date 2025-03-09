@@ -1,1 +1,3 @@
-This product include assets developed by Lucide Icons, under the Lucide License.
+This product includes assets developed by Lucide Icons, under the Lucide License.
+
+This product includes fonts developed by The Lexend Project, licensed under the SIL Open Font License v1.1.
