@@ -5,9 +5,9 @@
 </script>
 
 <div class="flex flex-col items-center justify-center sm:h-3/4" style="height: 100vh;">
-    <h1 class="text-red-500 font-bold text-7xl md:text-9xl mt-auto">Passata</h1>
+    <h1 class="text-red-500 font-bold text-7xl md:text-9xl mt-auto select-none">Passata</h1>
     <p
-        class="text-white font-bold text-lg text-center mt-8 mx-4 md:m-0 md:text-4xl"
+        class="text-white font-bold text-lg text-center mt-8 mx-4 md:m-0 md:text-4xl select-none"
     >
         Stop Burning Your Sauce, and Use This Instead.
     </p>

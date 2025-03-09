@@ -68,6 +68,13 @@ export const POST: RequestHandler = async ({ url }) => {
                 const latestTimestamp = logs.length > 0 ? logs[0].timestamp : -1;
                 emit("update", JSON.stringify(initialResponse));
 
+                // don't create duplicate connections
+                if (connections.find(item => {
+                    return item.connectionToken == connection
+                }) != undefined) {
+                    return;
+                }
+
                 // adding the connection to the room pool
                 visitorSet.set(token, [...connections, {
                     connectionToken: connection,
