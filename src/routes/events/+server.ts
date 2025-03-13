@@ -115,10 +115,10 @@ export const PUT: RequestHandler = async ({ request, url }) => {
         // Update all other clients with this token.
         await update(token);
 
-        return new Response(JSON.stringify(event), {
+        return new Response("ok!", {
             headers: {
-                "Content-Type": "text/event-stream",
-            },
+                "Cache-Control": "no-store",
+            }
         });
     } else {
         throw new Error("token invalid.");

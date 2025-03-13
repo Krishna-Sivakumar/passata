@@ -20,18 +20,16 @@
     import CheckIcon from "$lib/assets/CheckIcon.svelte";
     import BanIcon from "$lib/assets/BanIcon.svelte";
     import RepeatIcon from "$lib/assets/RepeatIcon.svelte";
+    import ShareIcon from "$lib/assets/ShareIcon.svelte";
+    import { generic, pomodoro } from "./configs";
+    import AddIcon from "$lib/assets/AddIcon.svelte";
 
     let timerState: Timer = $state({
-        config: [
-            {
-                duration: 20,
-                name: "",
-            },
-        ],
+        config: (data.mode == "pomodoro") ? pomodoro : generic,
         configIndex: 0,
         state: TimerState.Initial,
-        duration: 20,
-        currentSecondsLeft: 20,
+        duration: 0,
+        currentSecondsLeft: 0,
         repeatForever: false,
         log: [],
     });
@@ -94,6 +92,7 @@
                         0,
                     );
                 }
+                console.log("f")
                 PerformBrowserEvent();
             }
         });
@@ -133,7 +132,6 @@
     }
 
     async function sendEvent(event: LogEvent) {
-        console.log("sent");
         // TODO protect against XSS attacks on our site. Or DDOSing the API.
         // timerState.log = [...timerState.log, {realTimestamp: Date.now(), state: event.type}]
         const response = await fetch(
@@ -146,6 +144,7 @@
                 body: JSON.stringify({ ...event }),
             },
         );
+        console.log(await response.text())
     }
 
     function nextPeriod() {
@@ -158,6 +157,7 @@
             timerState,
         );
         sendEvent(timerState.log[0]);
+        console.log("a")
         PerformBrowserEvent();
     }
 
@@ -171,6 +171,7 @@
             timerState,
         );
         sendEvent(timerState.log[0]);
+        console.log("b")
         PerformBrowserEvent();
     }
 
@@ -184,10 +185,23 @@
             timerState,
         );
         sendEvent(timerState.log[0]);
+        console.log("c")
         PerformBrowserEvent();
     }
 
+    function toggleRepeat() {
+        let toggledEvent = timerState.repeatForever ? TimerState.DontRepeatForever : TimerState.RepeatForever;
+        timerState = PerformEvent(
+            {
+                state: toggledEvent,
+                currenSecondsLeft: timerState.currentSecondsLeft,
+                realTimestamp: Date.now()
+            }, timerState)
+        sendEvent(timerState.log[0]);
+    }
+
     function playButtonClick() {
+        console.log("toggle")
         if (timerState.state == TimerState.Playing) {
             pause();
         } else {
@@ -210,19 +224,22 @@
             intervalId = -1;
         }
         sendEvent(timerState.log[0]);
+        console.log("d")
         PerformBrowserEvent();
     }
+
+    let shareModal = $state(false);
 
     // Modal Section
 
     setTimeout(() => {
         // hacky solution to bring up the modal if uninitialized by SSEs
         if (timerState.log.length == 0) {
-            modal = true;
+            formModal = true;
         }
     }, 250);
 
-    let modal = $state(false);
+    let formModal = $state(false);
     let tempConfig: {
         name: string;
         seconds: number | null;
@@ -286,45 +303,58 @@
             },
             timerState,
         );
-        modal = false;
+        formModal = false;
         sendEvent(timerState.log[0]);
+        console.log("e")
         PerformBrowserEvent();
     }
     // End Modal Section
 
     // convert current seconds left to a HH:MM:SS string
-    function ToTimeExtendedString(seconds: number): [string, number] {
+    function ToTimeExtendedString(seconds: number): [string, string] {
         const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor(seconds / 60);
-        const realSeconds = Math.floor(seconds - hours * 3600 - minutes * 60);
-        const microSeconds = Math.floor(
-            (seconds - realSeconds - minutes * 60 - hours * 3600) * 1000,
-        );
+        const minutes = Math.floor(seconds / 60) % 60;
+        const realSeconds = Math.floor(seconds) % 60;
+        const milliseconds = Math.floor(Math.floor((seconds - Math.floor(seconds)) * 1000));
         if (hours > 0) {
-            return [`${hours}h ${minutes}m ${realSeconds}s`, microSeconds];
+            return [`${hours}h ${minutes}m ${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
         } else if (minutes > 0) {
-            return [`${minutes}m ${realSeconds}s`, microSeconds];
+            return [`${minutes}m ${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
         } else {
-            return [`${realSeconds}s`, microSeconds];
+            return [`${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
+        }
+    }
+
+    function HistoryDurationString(current: number, next: number): string {
+        const [timeString, millis] = ToTimeExtendedString((next - current)/1000)
+        if (timeString == "0s" && millis == "000") {
+            return "--";
+        } else if (timeString == "0s" && millis != "000") {
+            return `${millis}ms`
+        } else {
+            return timeString
         }
     }
 </script>
 
-{#if modal}
+{#if shareModal}
+{/if}
+
+{#if formModal}
     <Modal>
         <p class="text-white font-bold text-3xl">Setup the Timer!</p>
-        <hr class="border-t-white border my-2" />
-        <div class="grid grid-cols-6 gap-2 overflow-y-scroll pb-4 pt-8">
-            {#each tempConfig as configRow, index}
+        <hr class="border border-t-red-500/40 my-2" />
+        <div class="grid grid-cols-6 overflow-y-scroll pb-4 pt-8">
+            {#each tempConfig as _, index}
                 <input
                     type="text"
-                    class="px-2 py-1 text-white border border-white"
+                    class="px-2 py-1 text-white border-y border-white/10"
                     bind:value={tempConfig[index].name}
                     placeholder="Period Name"
                 />
                 <input
                     type="number"
-                    class="px-2 py-1 text-white border border-white"
+                    class="px-2 py-1 text-white border-y border-white/10"
                     min={0}
                     max={60}
                     bind:value={tempConfig[index].hours}
@@ -332,7 +362,7 @@
                 />
                 <input
                     type="number"
-                    class="px-2 py-1 text-white border border-white"
+                    class="px-2 py-1 text-white border-y border-white/10"
                     min={0}
                     max={60}
                     bind:value={tempConfig[index].minutes}
@@ -340,19 +370,19 @@
                 />
                 <input
                     type="number"
-                    class="px-2 py-1 text-white border border-white"
+                    class="px-2 py-1 text-white border-y border-white/10"
                     min={0}
                     max={60}
                     bind:value={tempConfig[index].seconds}
                     placeholder="0s"
                 />
                 <button
-                    class="text-white cursor-pointer py-1 px-2 border border-white"
+                    class="text-white cursor-pointer py-1 px-2 border border-white/10 hover:bg-white/20"
                     onclick={() => addRow(index)}>+</button
                 >
                 {#if index > 0}
                     <button
-                        class="text-white cursor-pointer py-1 px-2 border border-white"
+                        class="text-white cursor-pointer py-1 px-2 border border-white/10 hover:bg-white/20"
                         onclick={() => removeRow(index)}>-</button
                     >
                 {:else}
@@ -368,37 +398,43 @@
             {#if timerState.log.length > 0}
                 <button
                     class="flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
-                    onclick={() => (modal = false)}><BanIcon />Cancel</button
+                    onclick={() => (formModal = false)}><BanIcon />Cancel</button
                 >
             {/if}
         </div>
     </Modal>
 {/if}
 
-<nav class="h-[10vh] flex bg-[#020202] items-center px-10">
+<nav class="h-[10vh] flex bg-[#020202] items-center px-10 gap-3">
     <a href="/" class="text-4xl text-red-500 font-bold">Passata</a>
     <button
-        class="ml-auto flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
+        class="ml-auto flex items-center gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer text-xs sm:text-md"
+    ><ShareIcon/> Share</button>
+    <button
+        class="flex items-center gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer text-xs sm:text-md"
         onclick={() => {
-            modal = true;
-        }}>+ New Timer</button
+            formModal = true;
+        }}><AddIcon/> New Timer</button
     >
 </nav>
 <timer class="h-[40vh] flex flex-col py-10 items-center gap-2 select-none">
+    <p class="font-bold text-gray-300 text-2xl m-0">
+        {timerState.config[timerState.configIndex].name}
+    </p>
     {#if timerState.state == TimerState.Paused}
         <p
-            class="text-white font-bold text-8xl tabular-nums shadow-red-800 shadow-red"
+            class="text-white font-bold text-6xl sm:text-8xl tabular-nums shadow-red-800 shadow-red"
         >
             PAUSED
         </p>
     {:else}
         <div class="time-grid items-baseline">
             <p
-                class="text-white font-bold text-8xl tabular-nums shadow-red-800 shadow-red"
+                class="text-white font-bold text-6xl sm:text-8xl tabular-nums shadow-red-800 shadow-red pl-12"
             >
                 {ToTimeExtendedString(timerState.currentSecondsLeft)[0]}
             </p>
-            <p class="text-gray-500 text-xl mt-auto font-bold pb-1">
+            <p class="text-gray-500 sm:text-xl mt-auto font-bold pb-1">
                 {ToTimeExtendedString(timerState.currentSecondsLeft)[1]}
             </p>
         </div>
@@ -418,40 +454,39 @@
         class="w-24 flex gap-2 justify-center border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
         onclick={resetTimer}><ResetIcon />RESET</button
     >
-    <div
+    <button
         class="w-24 flex gap-1 justify-center text-white items-center border border-red-500 px-2 py-2 hover:bg-red-500 rounded transition ease-in-out"
         class:bg-red-800={timerState.repeatForever}
         class:border-red-800={timerState.repeatForever}
+        onclick={toggleRepeat}
     >
-        <input
-            type="checkbox"
-            bind:checked={timerState.repeatForever}
-            id="repeat"
-            class="appearance-none hidden"
-        />
         <RepeatIcon />
-        <label for="repeat" class="select-none cursor-pointer">Repeat</label>
-    </div>
+        <span class="select-none cursor-pointer">Repeat</span>
+    </button>
 
     <audio src={chime} bind:this={audioElement}> </audio>
 </timer>
 <history class="flex flex-col items-center pt-4">
-    <p class="capitalize text-3xl text-white font-bold select-none">Status</p>
-    <div class="grid grid-cols-2 sm:w-2/5 pb-8">
-        <p class="text-red-500 text-center select-none">Timestamp</p>
-        <p class="text-red-500 text-center select-none">Event</p>
-        {#each timerState.log as log}
-            <p class="text-white text-center">
-                {new Date(log.realTimestamp).toLocaleTimeString("en-US", {
+    <p class="capitalize text-3xl text-white font-bold select-none">History</p>
+    <div class="history-grid w-full sm:w-2/7 pb-8 text-sm sm:text-base">
+        <p class="text-red-500 text-center select-none">Date & Time</p>
+        <p class="text-red-500 text-center select-none">Type</p>
+        <p class="text-red-500 text-center select-none">Duration</p>
+        <hr class="border border-t-red-500 col-span-3"/>
+        {#each timerState.log as log, index}
+            <p class="text-white text-center mt-1">
+                {new Date(log.realTimestamp).toLocaleString(Intl.DateTimeFormat().resolvedOptions().locale, {
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                 })}
             </p>
             <p class="text-white text-center">{log.state}</p>
+            <p class="text-white text-center">{HistoryDurationString(log.realTimestamp, (timerState.log[index-1] || log).realTimestamp)}</p>
+            <hr class="border border-t-red-500/40 col-span-3"/>
         {/each}
     </div>
 </history>
 
-<div class="flex justify-center text-white mt-auto mb-8">
+<div class="flex justify-center text-white sm:mt-auto mb-8">
     <p>
         2025, <a
             href="https://krishna-sivakumar.github.io"
@@ -473,5 +508,10 @@
         display: grid;
         grid-template-columns: auto 3rem;
         gap: 1rem;
+    }
+
+    .history-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
     }
 </style>
