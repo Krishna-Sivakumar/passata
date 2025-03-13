@@ -62,6 +62,7 @@ export function PerformEvent(log: LogEvent, state: Timer): Timer {
         case TimerState.DontRepeatForever:
             checkUninitialized(state)
             state.repeatForever = false
+            break
         
         default:
             throw new ReplayError(ReplayErrorTypes.InvalidLog)

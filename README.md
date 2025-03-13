@@ -24,4 +24,5 @@ You can preview the production build with `npm run preview`.
 ### TODO
 ---
 1. Add link sharability
-
+2. TODO Implement NextPeriod event on the browser client
+3. TODO Debug weird issue with RepeatForever triggering an infinite initialization loop
