@@ -1,9 +1,10 @@
-import { TimerState, type LogEvent, type Timer } from "./structs";
+import { LogAction, TimerState, type LogEvent, type Timer } from "./structs";
 
-enum ReplayErrorTypes {
+export enum ReplayErrorTypes {
     UnInitialized = "state is uninitialized",
     WasNotPlaying = "the timer was not playing",
-    InvalidLog = "invalid log sequence"
+    InvalidLog = "invalid log sequence",
+    EmptyConfig = "empty config"
 }
 
 export class ReplayError extends Error {
@@ -24,42 +25,54 @@ const checkUninitialized = (state: Timer) => {
  * @returns the modified state
  */
 export function PerformEvent(log: LogEvent, state: Timer): Timer {
-    switch (log.state) {
-        case TimerState.Initial:
+    switch (log.action) {
+        case LogAction.Initialize:
+            if (log.config.length == 0) {
+                throw new ReplayError(ReplayErrorTypes.EmptyConfig)
+            }
             state.configIndex = 0
             state.config = log.config
             state.duration = state.config[state.configIndex].duration
             state.currentSecondsLeft = state.duration
-            state.state = TimerState.Initial
+            state.state = TimerState.Steady
+            break
+        
+        case LogAction.Reset:
+            checkUninitialized(state)
+            state.configIndex = 0
+            state.duration = state.config[state.configIndex].duration
+            state.currentSecondsLeft = state.duration
+            state.state = TimerState.Steady
             break
 
-        case TimerState.Playing:
+        case LogAction.Play:
             checkUninitialized(state)
+            if (state.state != TimerState.Steady && state.state != TimerState.Paused) {
+                throw new ReplayError(ReplayErrorTypes.InvalidLog)
+            }
             state.state = TimerState.Playing
             break
 
-        case TimerState.Paused:
+        case LogAction.Pause:
             checkUninitialized(state)
-            if (state.state != TimerState.Playing) {
-                throw new ReplayError(ReplayErrorTypes.WasNotPlaying)
-            }
             state.currentSecondsLeft = log.currenSecondsLeft
             state.state = TimerState.Paused
             break
 
-        case TimerState.NextPeriod:
+        case LogAction.NextPeriod:
             checkUninitialized(state)
-            state.configIndex = (state.configIndex + 1) % state.config.length
+            state.configIndex = log.configIndex,
             state.duration = state.config[state.configIndex].duration
             state.currentSecondsLeft = state.duration
+            state.state = TimerState.Steady
             break
 
-        case TimerState.RepeatForever:
+        case LogAction.Repeat:
             checkUninitialized(state)
             state.repeatForever = true
             break
         
-        case TimerState.DontRepeatForever:
+        case LogAction.DontRepeat:
             checkUninitialized(state)
             state.repeatForever = false
             break
@@ -96,7 +109,7 @@ export function ReplayLog(logs: LogEvent[], serverTimestamp: number): Timer {
     }
 
     const finalLog = logs[logs.length - 1]
-    if (finalLog.state == TimerState.Playing) {
+    if (finalLog.action == LogAction.Play) {
         // If the timer is still playing, check how many seconds have elapsed since the start.
         // If the time elapsed is more than the duration of the timer, the timer is done.
         // It's up to the browser to change over to the next config.

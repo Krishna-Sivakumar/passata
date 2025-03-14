@@ -12,6 +12,7 @@
         type LogEvent,
         type Timer,
         type TimestampedLogs,
+        LogAction,
     } from "$lib/structs";
     import { PerformEvent } from "$lib/events";
     import { source } from "sveltekit-sse";
@@ -25,7 +26,7 @@
     import AddIcon from "$lib/assets/AddIcon.svelte";
 
     let timerState: Timer = $state({
-        config: (data.mode == "pomodoro") ? pomodoro : generic,
+        config: data.mode == "pomodoro" ? pomodoro : generic,
         configIndex: 0,
         state: TimerState.Initial,
         duration: 0,
@@ -34,10 +35,8 @@
         log: [],
     });
 
-    // TODO if the timer is uninitialized while provided a query parameter (no logs):
-    // 1. TODO initialize it with a form if it's a custom timer or a kitchen timer
-    // 2. TODO intiailize it with a preset if it's a pomodoro timer
-    // TODO if the timer is initialized, ignore the query parameter
+    // TODO if the preset is pomodoro, don't show the form
+    // TODO automatically start playing after the initialization
 
     let intervalId: number = $state(-1);
     let correction = $state(-1); // NTP-Based clock correction for syncing timestamps
@@ -75,14 +74,21 @@
             let logArray = response.logs;
             // console.log(`got ${logArray.length} event(s):`, logArray)
 
+            console.log(logArray, timerState.log);
+
             // replay events in log
             for (let i = logArray.length - 1; i >= 0; i--) {
-                timerState = PerformEvent(logArray[i], timerState);
+                try {
+                    timerState = PerformEvent(logArray[i], timerState);
+                } catch (e) {
+                    console.log(e)
+                }
             }
 
             if (logArray.length > 0) {
                 const finalLog = logArray[0];
-                if (finalLog.state == TimerState.Playing) {
+                // TODO Treat a NextPeriod event in the same way
+                if (finalLog.action == LogAction.Play) {
                     // If the timer is still playing, check how many seconds have elapsed since the start.
                     // If the time elapsed is more than the duration of the timer, the timer is done.
                     // It's up to the browser to change over to the next config.
@@ -91,43 +97,70 @@
                             (Date.now() + gap - finalLog.realTimestamp) / 1000,
                         0,
                     );
+                } else if (finalLog.action == LogAction.NextPeriod) {
+                    timerState.currentSecondsLeft = Math.max(
+                        timerState.currentSecondsLeft -
+                            (Date.now() + gap - finalLog.realTimestamp),
+                        0,
+                    );
                 }
-                console.log("f")
+                // console.log("f")
                 PerformBrowserEvent();
             }
         });
     });
 
     function PerformBrowserEvent() {
+        // TODO if we're in Steady for the first time and configIndex = 0, start playing (after initialization)
+        // TODO If we're in steady for the second time or more and configIndex = 0, check if repeatForever is enabled and start playing if so
+        // TODO If we're in steady and configIndex > 0, start playing
+        // TODO If we're in steady and configIndex = 0 and repeatForever is false, don't play automatically
         // console.log(timerState.currentSecondsLeft)
-        if (
-            timerState.state == TimerState.Playing ||
-            timerState.state == TimerState.NextPeriod
-        ) {
-            let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
-            intervalId = window.setInterval(() => {
-                timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
-                if (timerState.currentSecondsLeft <= 0) {
-                    if (audioElement != undefined) {
-                        audioElement.play();
-                    }
-                    timerState.currentSecondsLeft = 0;
-                    resetTimer(); // reset the timer when it ends
-                    // if the timer can be repeated forever, start it up
-                    // TODO use a move to next stage signal to reset the timer instead
-                    // if repeat forever is set, reset the timer THERE.
+        switch (timerState.state) {
+            case TimerState.Uninitialized:
+                throw new Error("undefined behaviour");
+            case TimerState.Initial:
+                // do nothing
+                break;
+            case TimerState.Steady:
+                // clear the interval before doing anything
+                if (intervalId != -1) {
+                    clearInterval(intervalId);
+                    intervalId = -1;
                 }
-            });
-        }
-
-        if (
-            timerState.state == TimerState.Paused ||
-            timerState.state == TimerState.Initial
-        ) {
-            if (intervalId != -1) {
-                clearInterval(intervalId);
-            }
-            intervalId = -1;
+                // TODO bundle this together with the playing state below as the same function
+                // man I was right to try to separate play() into two different sub functions
+                if (
+                    timerState.configIndex > 0 ||
+                    (timerState.configIndex == 0 && timerState.repeatForever)
+                ) {
+                    if (intervalId != -1) {
+                        clearInterval(intervalId);
+                        intervalId = -1;
+                    }
+                    timerState.state = TimerState.Playing;
+                    PerformBrowserEvent();
+                }
+                break;
+            case TimerState.Playing:
+                let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
+                intervalId = window.setInterval(() => {
+                    timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
+                    if (timerState.currentSecondsLeft <= 0) {
+                        if (audioElement != undefined) {
+                            audioElement.play();
+                        }
+                        timerState.currentSecondsLeft = 0;
+                        nextPeriod(); // reset the timer when it ends
+                    }
+                });
+                break;
+            case TimerState.Paused:
+                if (intervalId != -1) {
+                    clearInterval(intervalId);
+                    intervalId = -1;
+                }
+                break;
         }
     }
 
@@ -144,64 +177,72 @@
                 body: JSON.stringify({ ...event }),
             },
         );
-        console.log(await response.text())
+        console.log(await response.text());
     }
 
     function nextPeriod() {
         timerState = PerformEvent(
             {
-                state: TimerState.NextPeriod,
-                currenSecondsLeft: timerState.currentSecondsLeft,
+                action: LogAction.NextPeriod,
                 realTimestamp: Date.now(),
+                configIndex: (timerState.configIndex + 1) % timerState.config.length
             },
             timerState,
         );
+        if (intervalId != -1) {
+            clearInterval(intervalId);
+            intervalId = -1;
+        }
         sendEvent(timerState.log[0]);
-        console.log("a")
+        console.log("a");
         PerformBrowserEvent();
     }
 
     function pause() {
         timerState = PerformEvent(
             {
-                state: TimerState.Paused,
+                action: LogAction.Pause,
                 currenSecondsLeft: timerState.currentSecondsLeft,
                 realTimestamp: Date.now(),
             },
             timerState,
         );
         sendEvent(timerState.log[0]);
-        console.log("b")
+        console.log("b");
         PerformBrowserEvent();
     }
 
     function play() {
         timerState = PerformEvent(
             {
-                state: TimerState.Playing,
+                action: LogAction.Play,
                 currenSecondsLeft: timerState.currentSecondsLeft,
                 realTimestamp: Date.now(),
             },
             timerState,
         );
         sendEvent(timerState.log[0]);
-        console.log("c")
+        console.log("c");
         PerformBrowserEvent();
     }
 
     function toggleRepeat() {
-        let toggledEvent = timerState.repeatForever ? TimerState.DontRepeatForever : TimerState.RepeatForever;
+        let toggledEvent = timerState.repeatForever
+            ? LogAction.DontRepeat
+            : LogAction.Repeat;
         timerState = PerformEvent(
             {
-                state: toggledEvent,
+                action: toggledEvent,
                 currenSecondsLeft: timerState.currentSecondsLeft,
-                realTimestamp: Date.now()
-            }, timerState)
+                realTimestamp: Date.now(),
+            },
+            timerState,
+        );
         sendEvent(timerState.log[0]);
     }
 
     function playButtonClick() {
-        console.log("toggle")
+        console.log("toggle");
         if (timerState.state == TimerState.Playing) {
             pause();
         } else {
@@ -212,7 +253,7 @@
     function resetTimer() {
         timerState = PerformEvent(
             {
-                state: TimerState.Initial,
+                action: LogAction.Initialize,
                 realTimestamp: Date.now() + gap,
                 config: timerState.config,
             },
@@ -224,7 +265,7 @@
             intervalId = -1;
         }
         sendEvent(timerState.log[0]);
-        console.log("d")
+        console.log("d");
         PerformBrowserEvent();
     }
 
@@ -297,7 +338,7 @@
         });
         timerState = PerformEvent(
             {
-                state: TimerState.Initial,
+                action: LogAction.Initialize,
                 realTimestamp: Date.now(),
                 config: config,
             },
@@ -305,7 +346,7 @@
         );
         formModal = false;
         sendEvent(timerState.log[0]);
-        console.log("e")
+        console.log("e");
         PerformBrowserEvent();
     }
     // End Modal Section
@@ -315,30 +356,45 @@
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor(seconds / 60) % 60;
         const realSeconds = Math.floor(seconds) % 60;
-        const milliseconds = Math.floor(Math.floor((seconds - Math.floor(seconds)) * 1000));
+        const milliseconds = Math.floor(
+            Math.floor((seconds - Math.floor(seconds)) * 1000),
+        );
         if (hours > 0) {
-            return [`${hours}h ${minutes}m ${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
+            return [
+                `${hours}h ${minutes}m ${realSeconds}s`,
+                "0".repeat(3 - milliseconds.toString().length) +
+                    milliseconds.toString(),
+            ];
         } else if (minutes > 0) {
-            return [`${minutes}m ${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
+            return [
+                `${minutes}m ${realSeconds}s`,
+                "0".repeat(3 - milliseconds.toString().length) +
+                    milliseconds.toString(),
+            ];
         } else {
-            return [`${realSeconds}s`, "0".repeat(3 - milliseconds.toString().length) + milliseconds.toString()];
+            return [
+                `${realSeconds}s`,
+                "0".repeat(3 - milliseconds.toString().length) +
+                    milliseconds.toString(),
+            ];
         }
     }
 
     function HistoryDurationString(current: number, next: number): string {
-        const [timeString, millis] = ToTimeExtendedString((next - current)/1000)
+        const [timeString, millis] = ToTimeExtendedString(
+            (next - current) / 1000,
+        );
         if (timeString == "0s" && millis == "000") {
             return "--";
         } else if (timeString == "0s" && millis != "000") {
-            return `${millis}ms`
+            return `${millis}ms`;
         } else {
-            return timeString
+            return timeString;
         }
     }
 </script>
 
-{#if shareModal}
-{/if}
+{#if shareModal}{/if}
 
 {#if formModal}
     <Modal>
@@ -398,7 +454,8 @@
             {#if timerState.log.length > 0}
                 <button
                     class="flex gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
-                    onclick={() => (formModal = false)}><BanIcon />Cancel</button
+                    onclick={() => (formModal = false)}
+                    ><BanIcon />Cancel</button
                 >
             {/if}
         </div>
@@ -409,12 +466,13 @@
     <a href="/" class="text-4xl text-red-500 font-bold">Passata</a>
     <button
         class="ml-auto flex items-center gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer text-xs sm:text-md"
-    ><ShareIcon/> Share</button>
+        ><ShareIcon /> Share</button
+    >
     <button
         class="flex items-center gap-2 border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer text-xs sm:text-md"
         onclick={() => {
             formModal = true;
-        }}><AddIcon/> New Timer</button
+        }}><AddIcon /> New Timer</button
     >
 </nav>
 <timer class="h-[40vh] flex flex-col py-10 items-center gap-2 select-none">
@@ -444,7 +502,7 @@
         class="w-24 flex gap-2 justify-center border border-red-500 text-white font-bold px-2 py-2 hover:bg-red-500 hover:text-black transition ease-in-out rounded cursor-pointer"
         onclick={playButtonClick}
     >
-        {#if timerState.state == TimerState.Paused || timerState.state == TimerState.Initial}
+        {#if timerState.state == TimerState.Paused || timerState.state == TimerState.Initial || timerState.state == TimerState.Steady}
             <PlayIcon /> START
         {:else}
             <PauseIcon /> PAUSE
@@ -472,16 +530,25 @@
         <p class="text-red-500 text-center select-none">Date & Time</p>
         <p class="text-red-500 text-center select-none">Type</p>
         <p class="text-red-500 text-center select-none">Duration</p>
-        <hr class="border border-t-red-500 col-span-3"/>
+        <hr class="border border-t-red-500 col-span-3" />
         {#each timerState.log as log, index}
             <p class="text-white text-center mt-1">
-                {new Date(log.realTimestamp).toLocaleString(Intl.DateTimeFormat().resolvedOptions().locale, {
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                })}
+                {new Date(log.realTimestamp).toLocaleString(
+                    Intl.DateTimeFormat().resolvedOptions().locale,
+                    {
+                        timeZone:
+                            Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    },
+                )}
             </p>
-            <p class="text-white text-center">{log.state}</p>
-            <p class="text-white text-center">{HistoryDurationString(log.realTimestamp, (timerState.log[index-1] || log).realTimestamp)}</p>
-            <hr class="border border-t-red-500/40 col-span-3"/>
+            <p class="text-white text-center">{log.action}</p>
+            <p class="text-white text-center">
+                {HistoryDurationString(
+                    log.realTimestamp,
+                    (timerState.log[index - 1] || log).realTimestamp,
+                )}
+            </p>
+            <hr class="border border-t-red-500/40 col-span-3" />
         {/each}
     </div>
 </history>
