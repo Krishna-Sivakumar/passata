@@ -72,12 +72,17 @@
             let response = JSON.parse(newValues) as TimestampedLogs;
 
             let logArray = response.logs;
-            // console.log(`got ${logArray.length} event(s):`, logArray)
 
-            console.log(logArray, timerState.log);
 
             // replay events in log
             for (let i = logArray.length - 1; i >= 0; i--) {
+                const log = logArray[i];
+                // TODO Repeat still fucks things up.
+                // We already apply NextPeriod locally on a master client.
+                // Applying a redundant NextPeriod from another master client will mess things up.
+                if (log.action == LogAction.NextPeriod && log.configIndex == timerState.configIndex) {
+                    return;
+                }
                 try {
                     timerState = PerformEvent(logArray[i], timerState);
                 } catch (e) {
@@ -98,13 +103,15 @@
                         0,
                     );
                 } else if (finalLog.action == LogAction.NextPeriod) {
-                    timerState.currentSecondsLeft = Math.max(
-                        timerState.currentSecondsLeft -
-                            (Date.now() + gap - finalLog.realTimestamp),
-                        0,
-                    );
+                    // If we're back at configIndex 0 at the end of a cycle and repeating isn't turned on, then the currentSecondsLeft doesn't need to change!
+                    if (finalLog.configIndex > 0 || (finalLog.configIndex == 0 && timerState.repeatForever)) {
+                        timerState.currentSecondsLeft = Math.max(
+                            timerState.currentSecondsLeft -
+                                (Date.now() + gap - finalLog.realTimestamp) / 1000,
+                            0,
+                        );
+                    }
                 }
-                // console.log("f")
                 PerformBrowserEvent();
             }
         });
@@ -112,10 +119,6 @@
 
     function PerformBrowserEvent() {
         // TODO if we're in Steady for the first time and configIndex = 0, start playing (after initialization)
-        // TODO If we're in steady for the second time or more and configIndex = 0, check if repeatForever is enabled and start playing if so
-        // TODO If we're in steady and configIndex > 0, start playing
-        // TODO If we're in steady and configIndex = 0 and repeatForever is false, don't play automatically
-        // console.log(timerState.currentSecondsLeft)
         switch (timerState.state) {
             case TimerState.Uninitialized:
                 throw new Error("undefined behaviour");
@@ -177,10 +180,10 @@
                 body: JSON.stringify({ ...event }),
             },
         );
-        console.log(await response.text());
     }
 
     function nextPeriod() {
+        // TODO other master clients will replay NextPeriod twice, debug this
         timerState = PerformEvent(
             {
                 action: LogAction.NextPeriod,
@@ -194,7 +197,6 @@
             intervalId = -1;
         }
         sendEvent(timerState.log[0]);
-        console.log("a");
         PerformBrowserEvent();
     }
 
@@ -208,7 +210,6 @@
             timerState,
         );
         sendEvent(timerState.log[0]);
-        console.log("b");
         PerformBrowserEvent();
     }
 
@@ -222,7 +223,6 @@
             timerState,
         );
         sendEvent(timerState.log[0]);
-        console.log("c");
         PerformBrowserEvent();
     }
 
@@ -242,7 +242,6 @@
     }
 
     function playButtonClick() {
-        console.log("toggle");
         if (timerState.state == TimerState.Playing) {
             pause();
         } else {
@@ -265,7 +264,6 @@
             intervalId = -1;
         }
         sendEvent(timerState.log[0]);
-        console.log("d");
         PerformBrowserEvent();
     }
 
@@ -346,7 +344,6 @@
         );
         formModal = false;
         sendEvent(timerState.log[0]);
-        console.log("e");
         PerformBrowserEvent();
     }
     // End Modal Section
@@ -477,7 +474,9 @@
 </nav>
 <timer class="h-[40vh] flex flex-col py-10 items-center gap-2 select-none">
     <p class="font-bold text-gray-300 text-2xl m-0">
+        {#if timerState.config.length > 0}
         {timerState.config[timerState.configIndex].name}
+        {/if}
     </p>
     {#if timerState.state == TimerState.Paused}
         <p

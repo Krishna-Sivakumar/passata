@@ -103,24 +103,47 @@ export const POST: RequestHandler = async ({ url }) => {
     );
 };
 
-// we're using the PUT method since the POST method is reserved for Server-Sent-Event responses
-export const PUT: RequestHandler = async ({ request, url }) => {
-    let event: LogEvent = await request.json();
-    event.realTimestamp = Date.now(); // every timestamp is pegged to the server's time
-    let token = url.searchParams.get("token");
-    let connection = url.searchParams.get("connectionToken");
-    if (token && connection) {
-        await insertLog(token, event, connection);
-
-        // Update all other clients with this token.
-        await update(token);
-
-        return new Response("ok!", {
-            headers: {
-                "Cache-Control": "no-store",
+/** Homebrewed mutex implementation */
+let lock = false;
+async function wait(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const timeoutLoop = () => {
+            if (lock == false) {
+                resolve()
+            } else {
+                setTimeout(timeoutLoop, 50)
             }
-        });
-    } else {
-        throw new Error("token invalid.");
+        }
+        setTimeout(timeoutLoop, 50)
+    })
+}
+
+// we're using the PUT method since the POST method is reserved for Server-Sent-Event responses
+// TODO this procedure must acquire a mutex
+export const PUT: RequestHandler = async ({ request, url }) => {
+    try {
+        await wait();
+        lock = true
+        let event: LogEvent = await request.json();
+        event.realTimestamp = Date.now(); // every timestamp is pegged to the server's time
+        let token = url.searchParams.get("token");
+        let connection = url.searchParams.get("connectionToken");
+
+        if (token && connection) {
+            await insertLog(token, event, connection);
+
+            // Update all other clients with this token.
+            await update(token);
+
+            return new Response("ok!", {
+                headers: {
+                    "Cache-Control": "no-store",
+                }
+            });
+        } else {
+            throw new Error("token invalid.");
+        }
+    } finally {
+        lock = false;
     }
 };

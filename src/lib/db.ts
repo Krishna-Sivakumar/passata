@@ -1,4 +1,4 @@
-import { LogEvent } from "./structs";
+import { LogAction, LogEvent } from "./structs";
 import sqlite3 from "sqlite3";
 
 let dbInstance: sqlite3.Database;
@@ -48,9 +48,9 @@ export function database(): Promise<sqlite3.Database> {
     });
 }
 
-export async function fetchRow<T>(statement: sqlite3.Statement): Promise<T> {
+export async function fetchRow<T>(statement: sqlite3.Statement, params: any[]): Promise<T> {
     return new Promise((resolve, reject) => {
-        statement.get((err, row) => {
+        statement.get(params, (err, row) => {
             if (err) {
                 reject(err);
             }
@@ -93,19 +93,22 @@ export async function insertLog(
     try {
         const db = await database();
         const selectStatement = db.prepare(
-            "SELECT log, connection FROM log ORDER BY timestamp DESC LIMIT 1",
+            "SELECT log, connection FROM log WHERE token = ? ORDER BY timestamp DESC LIMIT 1",
         );
         let record = await fetchRow<{ log: string; connection: string }>(
-            selectStatement,
+            selectStatement, [token]
         );
-        if (
-            record &&
-            record.log &&
-            (JSON.parse(record.log) as LogEvent).state == log.state &&
-            connectionToken != record.connection
-        ) {
-            // we don't process identical logs from multiple sources.
-            return;
+
+        if (record && record.log) {
+            // we don't process NextPeriod events from multiple sources.
+            // this is buggy, and it does not register consecutive NextPeriod actions with different config indices
+            let lastLog = JSON.parse(record.log) as LogEvent
+            if (lastLog.action == LogAction.NextPeriod && log.action == LogAction.NextPeriod) {
+                console.log(connectionToken, lastLog.configIndex, log.configIndex)
+                if (lastLog.configIndex == log.configIndex) {
+                    return;
+                }
+            }
         }
         const insertStatement = db.prepare(
             "INSERT INTO log(log, token, timestamp, connection) VALUES(?,?,?,?)",
