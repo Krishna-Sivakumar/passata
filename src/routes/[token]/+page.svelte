@@ -549,10 +549,12 @@
             </p>
             <p class="text-white text-center">{log.action}</p>
             <p class="text-white text-center">
+                {#if log.action == LogAction.NextPeriod || log.action == LogAction.Play}
                 {HistoryDurationString(
                     log.realTimestamp,
                     (timerState.log[index - 1] || log).realTimestamp,
                 )}
+                {/if}
             </p>
             <hr class="border border-t-red-500/40 col-span-3" />
         {/each}
