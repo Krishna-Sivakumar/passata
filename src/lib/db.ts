@@ -104,7 +104,6 @@ export async function insertLog(
             // this is buggy, and it does not register consecutive NextPeriod actions with different config indices
             let lastLog = JSON.parse(record.log) as LogEvent
             if (lastLog.action == LogAction.NextPeriod && log.action == LogAction.NextPeriod) {
-                console.log(connectionToken, lastLog.configIndex, log.configIndex)
                 if (lastLog.configIndex == log.configIndex) {
                     return;
                 }

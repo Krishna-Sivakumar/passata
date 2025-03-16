@@ -35,7 +35,6 @@
         log: [],
     });
 
-    // TODO if the preset is pomodoro, don't show the form
     // TODO automatically start playing after the initialization
 
     let intervalId: number = $state(-1);
@@ -45,6 +44,8 @@
 
     onMount(() => {
         async function correct() {
+            // TODO timestamps will differ across timezones, and gap should include a correction for timezone gaps as well.
+            // TODO we can do this by finding the difference between the current time and the server timetsamp time. (It's being done already, but we have to verify it.)
             const start = performance.now();
             const response = await fetch("/events", { method: "GET" });
             const timeAtResponse = Date.now();
@@ -77,9 +78,6 @@
             // replay events in log
             for (let i = logArray.length - 1; i >= 0; i--) {
                 const log = logArray[i];
-                // TODO Repeat still fucks things up.
-                // We already apply NextPeriod locally on a master client.
-                // Applying a redundant NextPeriod from another master client will mess things up.
                 if (log.action == LogAction.NextPeriod && log.configIndex == timerState.configIndex) {
                     return;
                 }
@@ -91,8 +89,15 @@
             }
 
             if (logArray.length > 0) {
-                const finalLog = logArray[0];
-                // TODO Treat a NextPeriod event in the same way
+                // this returns the first log that isn't a Repeat or DontRepeat action 
+                const finalLog = logArray.reduce((accum: LogEvent, current: LogEvent): LogEvent => {
+                    if (accum.action != LogAction.Repeat && accum.action != LogAction.DontRepeat) {
+                        return accum
+                    } else {
+                        return current
+                    }
+                })
+
                 if (finalLog.action == LogAction.Play) {
                     // If the timer is still playing, check how many seconds have elapsed since the start.
                     // If the time elapsed is more than the duration of the timer, the timer is done.
@@ -111,7 +116,7 @@
                             0,
                         );
                     }
-                }
+                } 
                 PerformBrowserEvent();
             }
         });
@@ -147,16 +152,19 @@
                 break;
             case TimerState.Playing:
                 let timestamp = Date.now() + 1000 * timerState.currentSecondsLeft;
-                intervalId = window.setInterval(() => {
-                    timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
-                    if (timerState.currentSecondsLeft <= 0) {
-                        if (audioElement != undefined) {
-                            audioElement.play();
+                if (intervalId == -1) {
+                    // THIS IS A HUGE BUG GENERATOR. Please check that there is no interval running already!
+                    intervalId = window.setInterval(() => {
+                        timerState.currentSecondsLeft = (timestamp - Date.now()) / 1000;
+                        if (timerState.currentSecondsLeft <= 0) {
+                            if (audioElement != undefined) {
+                                audioElement.play();
+                            }
+                            timerState.currentSecondsLeft = 0;
+                            nextPeriod(); // reset the timer when it ends
                         }
-                        timerState.currentSecondsLeft = 0;
-                        nextPeriod(); // reset the timer when it ends
-                    }
-                });
+                    });
+                }
                 break;
             case TimerState.Paused:
                 if (intervalId != -1) {
@@ -183,7 +191,6 @@
     }
 
     function nextPeriod() {
-        // TODO other master clients will replay NextPeriod twice, debug this
         timerState = PerformEvent(
             {
                 action: LogAction.NextPeriod,
